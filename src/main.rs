@@ -49,6 +49,44 @@ use sysfs_gpio::{Direction, Pin};
  *
  */
 
+struct Layer {
+    id: u8,
+    byte_array: [u8; 15000],
+    max_x: usize,
+    max_y: usize,
+}
+
+impl Layer {
+    fn get_byte_array() ->  [u8; max_x * max_y] {
+        let mut array = [u8; max_x * max_y];
+        for i in 0..(max_x * max_y) {
+            array[i] = self.byte_array[i];
+        }
+
+        array
+    }
+
+    fn new() -> Layer {
+
+    }
+}
+
+
+struct EinkImage {
+    layers: [Layer; 2],
+    image: GenericImage,
+    max_x: usize,
+    max_y: usize,
+}
+
+impl EinkImage {
+    fn new(image: GenericImage, color_layer: Option<bool>) -> EinkImage {
+
+
+    }
+}
+
+
 struct EinkDisplay {
     power: Pin,
     cs: Pin,
@@ -75,88 +113,86 @@ impl EinkDisplay {
         Ok(spi)
     }
 
-    fn power_on() {
+    fn power_on(&self) {
         five_ms = time::Duration::from_millis(5);
         ten_ms = time::Duration::from_millis(10);
         // Set pin direction
-        power.set_direction(Direction::High)?;
-        reset.set_direction(Direction::Low)?;
-        cs.set_direction(Direction::Low)?;
-        dc.set_direction(Direction::Low)?;
-        busy.set_direction(Direction::In)?;
+        self.power.set_direction(Direction::High)?;
+        self.reset.set_direction(Direction::Low)?;
+        self.cs.set_direction(Direction::Low)?;
+        self.dc.set_direction(Direction::Low)?;
+        self.busy.set_direction(Direction::In)?;
         // Enable pin
-        power.export();
-        reset.export();
-        cs.export();
-        dc.export();
-        busy.export();
+        self.power.export();
+        self.reset.export();
+        self.cs.export();
+        self.dc.export();
+        self.busy.export();
         // Power on Tcon (COG)
         thread::sleep(five_ms);
-        reset.set_value(1);
+        self.reset.set_value(1);
         thread::sleep(five_ms);
-        reset.set_value(0);
+        self.reset.set_value(0);
         thread::sleep(ten_ms);
-        reset.set_value(1);
+        self.reset.set_value(1);
         thread::sleep(five_ms);
-        spi.write(&[0x00, 0x0E])?;
+        self.spi.write(&[0x00, 0x0E])?;
         thread::sleep(five_ms);
         // Input Temp TODO: real data
-        spi.write(&[0xe5, 0x14])?;
+        self.spi.write(&[0xe5, 0x14])?;
         // Active Temp
-        if max_x == 400 && max_y == 300 {
+        if self.max_x == 400 && self.max_y == 300 {
             // Why is 4.2in special?
-            spi.write(&[0xe0, 0x02])?;
+            self.spi.write(&[0xe0, 0x02])?;
         } else {
-            spi.write(&[0xcf, 0x02])?;
+            self.spi.write(&[0xcf, 0x02])?;
         }
         // Panel settings
-        spi.write(&[0x00, 0x0F, 0x89])?;
+        self.spi.write(&[0x00, 0x0F, 0x89])?;
     }
 
     // Step 5 from "Application Notes for small size Spectra & Yellow EPD with iTC
     // Shut down DC
     // Also unexports to clean up.
-    fn power_off() {
-        spi.write(&[0x02, 0x02]);
-        wait_busy(1);
-        reset.set_direction(Direction::In)?;
-        cs.set_value(0);
-        dc.set_value(0);
-        power.set_value(0);
-        busy.set_direction(Direction::Low)?;
+    fn power_off(&self) {
+        self.spi.write(&[0x02, 0x02]);
+        self.wait_busy(1);
+        self.reset.set_direction(Direction::In)?;
+        self.cs.set_value(0);
+        self.dc.set_value(0);
+        self.power.set_value(0);
+        self.busy.set_direction(Direction::Low)?;
         thread::sleep(time::Duration::from_millis(150));
-        power.unexport();
-        reset.unexport();
-        cs.unexport();
-        dc.unexport();
-        busy.unexport();
+        self.power.unexport();
+        self.reset.unexport();
+        self.cs.unexport();
+        self.dc.unexport();
+        self.busy.unexport();
     }
 
 
-    fn send_image(image: Image) {
-        let layers = image.layers();
+    fn send_image(&self, image: EinkImage) {
+        let layers = &image.layers;
         for l in layers.iter() {
-            spi.write(&[l.copy()]);
-            cs.set_value(1);
-
-            dc.set_value(1);
-
-            cs.set_value(0);
-            spi.write(&image.layer_to_byte_array(l));
-            dc.set_value(0);
+            self.spi.write(&[l.id.copy()]);
+            self.cs.set_value(1);
+            self.dc.set_value(1);
+            self.cs.set_value(0);
+            self.spi.write(&l.get_byte_array());
+            self.dc.set_value(0);
         }
-        wait_busy(1);
+        self.wait_busy(1);
         // Power on command
-        spi.write(&[0x04, 0x04]);
-        wait_busy(0);
+        self.spi.write(&[0x04, 0x04]);
+        self.wait_busy(0);
         // Display refresh
-        spi.write(&[0x12, 0x12]);
-        wait_busy(1);
+        self.spi.write(&[0x12, 0x12]);
+        self.wait_busy(1);
     }
 
-    fn wait_busy(state: u8) {
+    fn wait_busy(&self, state: u8) {
         loop {
-            let val = busy.get_value()?;
+            let val = self.busy.get_value()?;
             if val == state {
                 break;
             }
@@ -164,12 +200,11 @@ impl EinkDisplay {
         }
     }
 
-    fn new(x: u8, y: u8) -> EinkDisplay {
+    fn new(x: usize, y: usize) -> EinkDisplay {
         EinkDisplay {
             spi: create_spi(spi_path),
             cs: Pin::new(17),
             dc: Pin::new(27),
-            //srcs: Pin::new(22),
             busy: Pin::new(23),
             reset: Pin::new(24),
             enable: Pin::new(25),
