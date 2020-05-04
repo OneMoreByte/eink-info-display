@@ -9,3 +9,4 @@ edition = "2018"
 [dependencies]
 sysfs_gpio = "0.5"
 spidev = "0.4.0"
+image = "0.23.4"
