@@ -49,40 +49,56 @@ use sysfs_gpio::{Direction, Pin};
  *
  */
 
-struct Layer {
-    id: u8,
-    byte_array: [u8; 15000],
-    max_x: usize,
-    max_y: usize,
-}
-
-impl Layer {
-    fn get_byte_array() ->  [u8; max_x * max_y] {
-        let mut array = [u8; max_x * max_y];
-        for i in 0..(max_x * max_y) {
-            array[i] = self.byte_array[i];
-        }
-
-        array
-    }
-
-    fn new() -> Layer {
-
-    }
-}
-
 
 struct EinkImage {
-    layers: [Layer; 2],
+    bw_layers: [[u8; 15000]; 2],
+    //cw_layers: [[u8; 15000]; 2],
     image: GenericImage,
+    color: bool,
     max_x: usize,
     max_y: usize,
 }
 
 impl EinkImage {
     fn new(image: GenericImage, color_layer: Option<bool>) -> EinkImage {
+        let (x, y) = image.dimensions() as (usize, usize);
+        EinkImage {
+            bw_layers: get_bw_layers(image),
+            //cw_layers: get_cw_layers(image),
+            image: image,
+            color: color_layer,
+            max_x: x,
+            max_y: y
+        }
 
+    }
 
+    fn get_bw_layers(image: GenericImage) -> [[u8; 15000]; 2] {
+        let (max_x, max_y) = image.dimensions();
+        let layers: [[u8; 15000]; 2];
+        let dark: [u8; 15000];
+        let temp: [u8; 8];
+        let i = 0;
+        for y in 0..max_y {
+            for x in 0..(max_x/8) {
+                // Break 8 pixels into a u8 where each bit is 1/0
+                let msg: u8 = 0;
+                for n in 0..7 {
+                    let pixel = image.get_pixel_mut((x*8)+n, y);
+                    if pixel.get_luma() <  u8::MAX/2 {
+                        msg += 1 * 2u8.pow(n);
+                    }
+                }
+                dark[i] = msg;
+                i++;
+            }
+        }
+        layers[0] = dark;
+        return layers;
+    }
+
+    fn get_cw_layers(image: GenericImage) -> [[u8; 15000]; 2] {
+        let dark: [u8; 15000];
     }
 }
 
@@ -208,7 +224,8 @@ impl EinkDisplay {
             busy: Pin::new(23),
             reset: Pin::new(24),
             enable: Pin::new(25),
-
+            max_x: x,
+            max_y: y,
         }
     }
 
@@ -218,6 +235,8 @@ impl EinkDisplay {
 fn main() {
     let x: usize = 400;
     let y: usize = 300;
+    let raw_image = image::open("test-image.png").unwrap();
+    let image: EinkImage = EinkImage::new(raw_image, false)
     let display = EinkDisplay::new(x, y);
 
     println!("Hello, world!");
